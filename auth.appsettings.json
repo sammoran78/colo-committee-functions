@@ -1,0 +1,15 @@
+{
+  "AUTH_MODE": "oidc",
+  "AUTH_TOKEN_EXCHANGE": "enabled",
+  "AUTH_ISSUER": "https://colocolosydney.com/wenisch-tech/keystone-oidc",
+  "AUTH_CLIENT_ID": "client_2b06478e732a8862898416f2",
+  "AUTH_AUDIENCE": "client_2b06478e732a8862898416f2",
+  "AUTH_AUTHORIZATION_ENDPOINT": "https://colocolosydney.com/wenisch-tech/keystone-oidc/oauth/authorize",
+  "AUTH_TOKEN_ENDPOINT": "https://colocolosydney.com/wenisch-tech/keystone-oidc/oauth/token",
+  "AUTH_JWKS_URI": "https://colocolosydney.com/wenisch-tech/keystone-oidc/oauth/jwks",
+  "AUTH_REQUIRED_SCOPE": "openid",
+  "AUTH_ADMIN_SUBJECTS": "1",
+  "AUTH_PUBLIC_API_BASE_URL": "https://colo-committee-functions-d6dsgsasfnc4f5hv.australiaeast-01.azurewebsites.net/api",
+  "AUTH_REDIRECT_URI": "https://thankful-rock-0cef6e000.3.azurestaticapps.net/auth/callback",
+  "ALLOWED_ORIGINS": "https://thankful-rock-0cef6e000.3.azurestaticapps.net"
+}

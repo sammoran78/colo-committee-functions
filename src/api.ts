@@ -4,6 +4,7 @@ import { getStore, type Store } from './store.js';
 import { authenticate } from './auth.js';
 import { Service } from './service.js';
 import { upload, download } from './files.js';
+import { signInMetadata, exchangeCode } from './oidc.js';
 
 const json = (data: unknown, status = 200) =>
   new Response(JSON.stringify(data), {
@@ -62,6 +63,13 @@ async function dispatch(
     if (request.method === 'OPTIONS')
       return new Response(null, { status: 204 });
     if (segments[0] === 'health') return json({ status: 'ok' });
+    if (segments.length === 2 && segments[0] === 'auth') {
+      if (segments[1] === 'configuration' && request.method === 'GET')
+        return json(signInMetadata());
+      if (segments[1] === 'token' && request.method === 'POST')
+        return json(await exchangeCode(request));
+      throw new Problem(404, 'Sign-in endpoint not found.');
+    }
     const store = providedStore || (await getStore());
     const actor = await authenticate(request.headers, store);
     const service = new Service(store, actor);

@@ -56,11 +56,22 @@ export async function authenticate(
       issuer,
       audience,
       algorithms: ['RS256', 'ES256'],
+      requiredClaims: ['sub', 'iat', 'exp'],
     }));
   } catch {
     throw new Problem(401, 'Your session is invalid or has expired.');
   }
   if (!payload.sub) throw new Problem(401, 'The token has no subject.');
+  const requiredScope = process.env.AUTH_REQUIRED_SCOPE?.trim();
+  if (
+    requiredScope &&
+    (typeof payload.scope !== 'string' ||
+      !payload.scope.split(/\s+/).includes(requiredScope))
+  )
+    throw new Problem(
+      401,
+      'Use an access token with the required dashboard scope.',
+    );
   const id = memberId(issuer, payload.sub);
   const stored = await store.get('member', id);
   // An explicit disabled membership always overrides the bootstrap allowlist.

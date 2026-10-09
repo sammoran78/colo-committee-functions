@@ -34,13 +34,23 @@ Set `BLOB_STORAGE_CONNECTION_STRING` and `BLOB_CONTAINER_FILES` for connection-s
 
 The application never provisions resources. Obtain the owner's cost approval before cloud resource or throughput changes.
 
+## WordPress sign-in
+
+Follow [the WordPress setup guide](../colo-committee-dash/docs/WORDPRESS_SIGN_IN.md) for the staff-only Keystone OIDC integration. The optional exchange is off by default (`AUTH_TOKEN_EXCHANGE=disabled`). When enabled, it exposes public metadata and exchanges only authorization codes for the configured client, exact redirect and dashboard origin, with a required PKCE verifier. It uses fixed server-configured HTTPS identity endpoints, can add a server-only `AUTH_CLIENT_SECRET`, and discards refresh tokens. It does not grant dashboard membership.
+
+[auth.appsettings.json](auth.appsettings.json) contains the verified public identity settings for the registered club client and the owner's confirmed initial administrator subject `1`, ready to merge into the existing Function App settings. It intentionally omits `AUTH_CLIENT_SECRET` (already stored in Azure) and all storage settings. Do not replace the full Azure settings list with this file. The file is not automatically applied by deployment. Remove `AUTH_ADMIN_SUBJECTS` from Azure and this bootstrap file after creating and verifying the permanent administrator membership.
+
+Configure `AUTH_REQUIRED_SCOPE=openid` with this provider to distinguish access tokens from ID tokens. Every data request still verifies the signed JWT, issuer, audience, expiration and approved staff membership. Frontend `VITE_*` variables belong in the dashboard build, not this app's settings. Live WordPress sign-in has not been tested.
+
 ## API contract
 
-All routes are prefixed `/api`. All except health and preflight require a verified staff JWT in production.
+All routes are prefixed `/api`. Data routes require a verified staff JWT in production. Health, preflight and the explicitly enabled sign-in endpoints are public.
 
 | Method / route | Purpose |
 |---|---|
 | `GET /health` | Process liveness only; not a Cosmos/Blob readiness check |
+| `GET /auth/configuration` | Public OIDC metadata for the configured dashboard exchange; disabled by default |
+| `POST /auth/token` | Registered authorization-code + PKCE exchange; disabled by default |
 | `GET /me` | Current identity, roles and operating mode |
 | `GET /people` | Active staff names/IDs for assignment; no identity subjects |
 | `GET /records/{kind}?cursor=…` | Permission-filtered page of up to 100 records |

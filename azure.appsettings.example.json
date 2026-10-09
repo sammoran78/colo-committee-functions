@@ -21,5 +21,13 @@
   "AUTH_AUDIENCE": "YOUR-API-AUDIENCE",
   "AUTH_JWKS_URI": "https://YOUR-OIDC-ISSUER/PATH-TO-JWKS",
   "AUTH_ADMIN_SUBJECTS": "VERIFIED-SUBJECT-OF-INITIAL-ADMIN",
+  "AUTH_TOKEN_EXCHANGE": "disabled",
+  "AUTH_CLIENT_ID": "",
+  "AUTH_CLIENT_SECRET": "",
+  "AUTH_AUTHORIZATION_ENDPOINT": "",
+  "AUTH_TOKEN_ENDPOINT": "",
+  "AUTH_PUBLIC_API_BASE_URL": "https://colo-committee-functions-d6dsgsasfnc4f5hv.australiaeast-01.azurewebsites.net/api",
+  "AUTH_REDIRECT_URI": "https://thankful-rock-0cef6e000.3.azurestaticapps.net/auth/callback",
+  "AUTH_REQUIRED_SCOPE": "",
   "ALLOWED_ORIGINS": "https://YOUR-DASHBOARD-HOST"
 }
