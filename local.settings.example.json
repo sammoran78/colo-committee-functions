@@ -1,0 +1,27 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "FUNCTIONS_WORKER_RUNTIME": "node",
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "NODE_ENV": "development",
+    "STORE_MODE": "file",
+    "AUTH_MODE": "development",
+    "COSMOS_ENDPOINT": "https://YOUR-ACCOUNT.documents.azure.com:443/",
+    "COSMOS_DATABASE_ID": "phd-helper",
+    "COSMOS_CONTAINER_INVENTORY": "colo-inventory",
+    "COSMOS_INVENTORY_PARTITION_KEY_PATH": "/id",
+    "COSMOS_CONTAINER_WORK": "colo-work",
+    "COSMOS_CONTAINER_CONTACTS": "colo-contacts",
+    "COSMOS_CONTAINER_CONTENT": "colo-content",
+    "COSMOS_CONTAINER_AUTOMATION": "colo-automation",
+    "COSMOS_CONTAINER_ACCESS": "colo-access",
+    "AUTH_ISSUER": "",
+    "AUTH_AUDIENCE": "",
+    "AUTH_JWKS_URI": "",
+    "AUTH_ADMIN_SUBJECTS": "",
+    "BLOB_ACCOUNT_URL": "",
+    "BLOB_STORAGE_CONNECTION_STRING": "",
+    "BLOB_CONTAINER_FILES": "colo-files",
+    "ALLOWED_ORIGINS": "http://localhost:5173,http://127.0.0.1:5173"
+  }
+}
