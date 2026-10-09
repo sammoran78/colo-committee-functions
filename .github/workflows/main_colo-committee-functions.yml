@@ -66,6 +66,7 @@ jobs:
         id: fa
         with:
           app-name: 'colo-committee-functions'
-          slot-name: 'Production'
+          # Publish-profile authentication cannot detect Flex Consumption automatically.
+          sku: 'flexconsumption'
           package: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_282885A10E1D409B90CD75A899585043 }}

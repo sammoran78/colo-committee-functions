@@ -34,6 +34,8 @@ Set `BLOB_STORAGE_CONNECTION_STRING` and `BLOB_CONTAINER_FILES` for connection-s
 
 The application never provisions resources. Obtain the owner's cost approval before cloud resource or throughput changes.
 
+The existing app uses **Flex Consumption**. Its publish-profile deployment therefore sets `sku: flexconsumption` on `Azure/functions-action` and omits deployment slots. The previous workflow tried the Kudu settings path and failed with 401 before publishing any code. The workflow already builds TypeScript and includes dependencies in its deployment package, so no remote build is requested. [Azure Functions action parameters](https://github.com/Azure/functions-action#parameter-reference)
+
 ## WordPress sign-in
 
 Follow [the WordPress setup guide](../colo-committee-dash/docs/WORDPRESS_SIGN_IN.md) for the staff-only Keystone OIDC integration. The optional exchange is off by default (`AUTH_TOKEN_EXCHANGE=disabled`). When enabled, it exposes public metadata and exchanges only authorization codes for the configured client, exact redirect and dashboard origin, with a required PKCE verifier. It uses fixed server-configured HTTPS identity endpoints, can add a server-only `AUTH_CLIENT_SECRET`, and discards refresh tokens. It does not grant dashboard membership.
