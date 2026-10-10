@@ -3,7 +3,7 @@ import { kinds, type Kind, Problem } from './model.js';
 import { getStore, type Store } from './store.js';
 import { authenticate } from './auth.js';
 import { Service } from './service.js';
-import { upload, download } from './files.js';
+import { upload, download, removeFile } from './files.js';
 import { signInMetadata, exchangeCode } from './oidc.js';
 
 const json = (data: unknown, status = 200) =>
@@ -96,10 +96,33 @@ async function dispatch(
     if (id && !/^[a-zA-Z0-9_-]{1,100}$/.test(id))
       throw new Problem(400, 'Invalid record ID.');
     if (segments[0] === 'files' && id) {
-      if (request.method === 'POST')
+      const fileId = segments[3];
+      if (fileId && !/^[a-zA-Z0-9_-]{1,100}$/.test(fileId))
+        throw new Problem(400, 'Invalid file ID.');
+      if (request.method === 'POST' && segments.length === 3)
         return json(await upload(service, kind, id, request), 201);
-      if (request.method === 'GET' && segments[3])
-        return download(service, kind, id, segments[3]);
+      if (request.method === 'GET' && segments.length === 4)
+        return await download(
+          service,
+          kind,
+          id,
+          fileId,
+          u.searchParams.get('preview') === '1',
+        );
+      if (
+        request.method === 'POST' &&
+        segments.length === 5 &&
+        segments[4] === 'remove'
+      ) {
+        const version = Number(request.headers.get('if-match'));
+        if (!Number.isSafeInteger(version) || version < 1)
+          throw new Problem(
+            428,
+            'Send the current record version using If-Match.',
+          );
+        return json(await removeFile(service, kind, id, fileId, version));
+      }
+      throw new Problem(405, 'Method not allowed.');
     }
     if (segments[0] === 'records') {
       if (request.method === 'GET')

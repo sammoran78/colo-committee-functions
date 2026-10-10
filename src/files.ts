@@ -1,6 +1,6 @@
 import { BlobServiceClient } from '@azure/storage-blob';
 import { DefaultAzureCredential } from '@azure/identity';
-import { mkdir, writeFile, readFile } from 'node:fs/promises';
+import { mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { type Kind, Problem, assertWrite } from './model.js';
@@ -93,10 +93,11 @@ export async function download(
   kind: Kind,
   id: string,
   fileId: string,
+  preview = false,
 ) {
   const e = await service.get(kind, id);
   const f = e.data.files?.find((x: any) => x.id === fileId);
-  if (!f) throw new Problem(404, 'File not found.');
+  if (!f || f.removedAt) throw new Problem(404, 'File not found.');
   if (
     kind === 'asset' &&
     (e.data.status === 'Restricted' || !(await service.assetUsable(e)))
@@ -111,9 +112,52 @@ export async function download(
   return new Response(new Uint8Array(bytes), {
     headers: {
       'Content-Type': f.type,
-      'Content-Disposition': `attachment; filename="${f.name}"`,
+      'Content-Disposition': `${preview && ['image/png', 'image/jpeg', 'image/webp', 'application/pdf', 'text/plain'].includes(f.type) ? 'inline' : 'attachment'}; filename="${f.name.replace(/[^a-zA-Z0-9 ._-]/g, '_')}"`,
       'Cache-Control': 'no-store',
       'X-Content-Type-Options': 'nosniff',
     },
   });
+}
+
+export async function removeFile(
+  service: Service,
+  kind: Kind,
+  id: string,
+  fileId: string,
+  expected: number,
+) {
+  let e = await service.get(kind, id);
+  assertWrite(service.actor, e);
+  if (e.version !== expected)
+    throw new Problem(
+      409,
+      'This record changed. Refresh before removing a file.',
+    );
+  let f = e.data.files?.find((x: any) => x.id === fileId);
+  if (!f) throw new Problem(404, 'File not found.');
+  if (f.removedAt && !f.deletionPending) return e;
+  if (!f.removedAt) {
+    f.removedAt = new Date().toISOString();
+    f.removedBy = service.actor.id;
+    f.deletionPending = true;
+    if (['document', 'asset'].includes(kind)) e.data.status = 'Draft';
+    // Revoke access before deleting bytes. A failed concurrent write cannot delete a live attachment.
+    e = await service.save(e, expected, 'Removed file: ' + f.name);
+  }
+  try {
+    if (isLocal())
+      await rm(resolve('.data/files', kind, id, fileId), { force: true });
+    else await container().getBlobClient(f.path).deleteIfExists();
+  } catch {
+    throw new Problem(
+      503,
+      'The file is hidden, but storage cleanup failed. Refresh and retry cleanup.',
+    );
+  }
+  // Re-read so concurrent catalogue edits are preserved; pending cleanup can safely be retried.
+  e = await service.get(kind, id);
+  f = e.data.files?.find((x: any) => x.id === fileId);
+  if (!f?.deletionPending) return e;
+  f.deletionPending = false;
+  return service.save(e, e.version, 'Deleted stored file: ' + f.name);
 }

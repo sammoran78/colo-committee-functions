@@ -5,8 +5,9 @@ import { Service, all } from '../src/service.js';
 import { FileStore } from '../src/store.js';
 import { localActor, authenticate } from '../src/auth.js';
 import { handle } from '../src/api.js';
-import { type Actor, type Entry } from '../src/model.js';
-import { upload, download } from '../src/files.js';
+import { type Actor, type Entry, Problem } from '../src/model.js';
+import { upload, download, removeFile } from '../src/files.js';
+import { readFile } from 'node:fs/promises';
 
 const setup = () => {
   const store = new FileStore();
@@ -87,6 +88,16 @@ test('private files retain versions and downloads enforce record access', async 
     assert.equal(e.data.files.length, 2);
     const response = await download(s, 'document', e.id, e.data.files[0].id);
     assert.equal(await response.text(), 'Version one');
+    assert.match(
+      response.headers.get('content-disposition') || '',
+      /^attachment;/,
+    );
+    assert.match(
+      (
+        await download(s, 'document', e.id, e.data.files[0].id, true)
+      ).headers.get('content-disposition') || '',
+      /^inline;/,
+    );
     const staff = new Service(store, {
       id: 'staff',
       name: 'Staff',
@@ -101,7 +112,108 @@ test('private files retain versions and downloads enforce record access', async 
       upload(s, 'document', e.id, req(1, 'Stale write')),
       /changed/,
     );
+    await assert.rejects(
+      removeFile(staff, 'document', e.id, e.data.files[0].id, e.version),
+      /not found|unavailable/,
+    );
+    const fileId = e.data.files[0].id;
+    await assert.rejects(removeFile(s, 'document', e.id, fileId, 1), /changed/);
+    assert.equal(
+      await (await download(s, 'document', e.id, fileId)).text(),
+      'Version one',
+    );
+    e = await removeFile(s, 'document', e.id, fileId, e.version);
+    assert.ok(e.data.files[0].removedAt);
+    assert.equal(e.data.files[0].deletionPending, false);
+    await assert.rejects(
+      download(s, 'document', e.id, fileId),
+      /File not found/,
+    );
+    await assert.rejects(readFile(`.data/files/document/${e.id}/${fileId}`), {
+      code: 'ENOENT',
+    });
+    const version = e.version;
+    assert.equal(
+      (await removeFile(s, 'document', e.id, fileId, version)).version,
+      version,
+    );
+    assert.equal(
+      await (await download(s, 'document', e.id, e.data.files[1].id)).text(),
+      'Version two',
+    );
   } finally {
+    for (const key of Object.keys(process.env))
+      if (!(key in old)) delete process.env[key];
+    Object.assign(process.env, old);
+  }
+});
+
+test('file cleanup can be retried after a concurrent edit without restoring access', async (t) => {
+  const { s, store } = setup();
+  const old = { ...process.env };
+  try {
+    process.env.STORE_MODE = 'file';
+    process.env.NODE_ENV = 'development';
+    process.env.AUTH_MODE = 'development';
+    delete process.env.WEBSITE_INSTANCE_ID;
+    let e = await s.create('item', { title: 'Photographed item' });
+    e = await upload(
+      s,
+      'item',
+      e.id,
+      new Request('http://localhost/api/files', {
+        method: 'POST',
+        headers: {
+          'if-match': String(e.version),
+          'content-type': 'image/png',
+          'x-file-name': 'item.png',
+        },
+        body: Buffer.from(
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jZ1sAAAAASUVORK5CYII=',
+          'base64',
+        ),
+      }),
+    );
+    const file = e.data.files[0];
+    const endpoint = `http://localhost/api/files/item/${e.id}/${file.id}`;
+    const preview = await handle(new Request(endpoint + '?preview=1'), store);
+    assert.equal(preview.status, 200);
+    assert.equal(preview.headers.get('content-type'), 'image/png');
+    const missingVersion = await handle(
+      new Request(endpoint + '/remove', { method: 'POST' }),
+      store,
+    );
+    assert.equal(missingVersion.status, 428);
+    const replace = store.replace.bind(store);
+    t.mock.method(store, 'replace', async (value: Entry, expected: number) => {
+      if (
+        value.data.files?.[0].removedAt &&
+        value.data.files[0].deletionPending === false
+      )
+        throw new Problem(409, 'Concurrent catalogue edit');
+      return replace(value, expected);
+    });
+    await assert.rejects(
+      removeFile(s, 'item', e.id, file.id, e.version),
+      /Concurrent catalogue/,
+    );
+    let current = await s.get('item', e.id);
+    assert.equal(current.data.files[0].deletionPending, true);
+    assert.equal((await handle(new Request(endpoint), store)).status, 404);
+    t.mock.restoreAll();
+    const retry = await handle(
+      new Request(endpoint + '/remove', {
+        method: 'POST',
+        headers: { 'if-match': String(current.version) },
+      }),
+      store,
+    );
+    assert.equal(retry.status, 200);
+    current = await retry.json();
+    assert.equal(current.data.files[0].deletionPending, false);
+    assert.equal((await handle(new Request(endpoint), store)).status, 404);
+  } finally {
+    t.mock.restoreAll();
     for (const key of Object.keys(process.env))
       if (!(key in old)) delete process.env[key];
     Object.assign(process.env, old);

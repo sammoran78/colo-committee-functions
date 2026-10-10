@@ -44,6 +44,20 @@ Follow [the WordPress setup guide](../colo-committee-dash/docs/WORDPRESS_SIGN_IN
 
 Configure `AUTH_REQUIRED_SCOPE=openid` with this provider to distinguish access tokens from ID tokens. Every data request still verifies the signed JWT, issuer, audience, expiration and approved staff membership. Frontend `VITE_*` variables belong in the dashboard build, not this app's settings. Live WordPress sign-in has not been tested.
 
+## Staff registration and inventory files
+
+Set `AUTH_REGISTER_SIGN_INS=enabled` to record the first verified sign-in in `colo-access`. Ordinary accounts start inactive with no roles; only a configured bootstrap administrator starts active. Repeated sign-ins read the existing membership without rewriting it, and a disabled membership always overrides the bootstrap setting. The owner approved the additional usage on the existing Cosmos and Blob services on 10 October 2026. No new resources are required.
+
+Set `AUTH_USERINFO_ENDPOINT=https://colocolosydney.com/wenisch-tech/keystone-oidc/oauth/userinfo` to obtain names and email addresses from WordPress on first registration. The API verifies the access token first and accepts profile details only for the matching subject from an HTTPS endpoint on the issuer origin. Provider roles are ignored. If the profile is unavailable, the record uses the WordPress user ID; an administrator can edit its display name. No token is stored. Without registration enabled, the earlier manual membership workflow remains available.
+
+Previously linked users need to sign in again after these settings and the backend are deployed. In Settings, open a pending staff membership, select roles and any project restrictions, then check **Access enabled** and save. No access is granted merely by linking WordPress. Remove `AUTH_ADMIN_SUBJECTS` only after verifying the permanent admin membership.
+
+Item photos can be uploaded when creating/editing an item or from its **Photos and files** panel. Private image, PDF and text previews use authenticated API requests; DOCX/XLSX files are downloaded. File removal revokes access in Cosmos before deleting the stored bytes, preserves the activity history, and exposes **Retry cleanup** if deletion or the final metadata update fails. A stale version or insufficient permissions cannot delete an active file. Azure retention/versioning policies may retain deleted bytes according to the existing storage configuration.
+
+Changing the catalogue storage location moves all stock buckets at the old catalogue location to the selected location, merges matching condition buckets, and records a transfer. Stock at other locations and outstanding loans are preserved. Existing free-text location names remain selectable so older records can be edited without losing their location.
+
+Projects accept an optional `start` date alongside `due`; start must not be after due. Older projects remain compatible.
+
 ## API contract
 
 All routes are prefixed `/api`. Data routes require a verified staff JWT in production. Health, preflight and the explicitly enabled sign-in endpoints are public.
@@ -62,6 +76,8 @@ All routes are prefixed `/api`. Data routes require a verified staff JWT in prod
 | `POST /records/{kind}/{id}/{action}` | Domain command with `If-Match` and unique `Idempotency-Key` |
 | `POST /files/{kind}/{id}` | Raw file body, allowed Content-Type, `X-File-Name`, `If-Match` |
 | `GET /files/{kind}/{id}/{fileId}` | Authorized private attachment download |
+| `GET /files/{kind}/{id}/{fileId}?preview=1` | Authorized inline image, PDF or text content |
+| `POST /files/{kind}/{id}/{fileId}/remove` | Remove attachment and stored bytes, with `If-Match`; retry pending cleanup |
 | `POST /assistant/review` | Manual deterministic proposal generation; no model calls |
 
 Kinds and schemas: [src/model.ts](src/model.ts). Commands and approval rules: [src/service.ts](src/service.ts). HTTP adapter: [src/api.ts](src/api.ts). The frontend sends only editable fields, not the whole stored document.

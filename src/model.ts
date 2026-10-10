@@ -106,13 +106,19 @@ const balance = z.object({
   quantity: z.number().int().nonnegative().max(1000000),
 });
 export const schemas: Record<Kind, z.ZodType> = {
-  project: plain.extend({
-    ownerId: optionalId,
-    status: z
-      .enum(['Planning', 'Active', 'Complete', 'Archived'])
-      .default('Planning'),
-    due: day,
-  }),
+  project: plain
+    .extend({
+      ownerId: optionalId,
+      status: z
+        .enum(['Planning', 'Active', 'Complete', 'Archived'])
+        .default('Planning'),
+      due: day,
+      start: day,
+    })
+    .refine((d) => !d.start || !d.due || d.start <= d.due, {
+      message: 'The project start date must be on or before its due date.',
+      path: ['due'],
+    }),
   task: plain.extend({
     ownerId: optionalId,
     status: z
@@ -256,13 +262,19 @@ export const schemas: Record<Kind, z.ZodType> = {
     sourceKind: z.enum(kinds).optional(),
     sourceVersion: z.number().int().optional(),
   }),
-  member: plain.extend({
-    subject: name,
-    issuer: z.url(),
-    roles: z.array(z.enum(roles)).min(1),
-    projectIds: z.array(id).max(100).default([]),
-    active: z.boolean().default(true),
-  }),
+  member: plain
+    .extend({
+      subject: name,
+      issuer: z.url(),
+      email: z.union([z.email(), z.literal('')]).default(''),
+      roles: z.array(z.enum(roles)).max(roles.length),
+      projectIds: z.array(id).max(100).default([]),
+      active: z.boolean().default(true),
+    })
+    .refine((d) => !d.active || d.roles.length > 0, {
+      message: 'Select at least one role before enabling staff access.',
+      path: ['roles'],
+    }),
 };
 export const observationSchema = z
   .object({

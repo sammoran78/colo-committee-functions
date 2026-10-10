@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { generateKeyPair, exportJWK, SignJWT } from 'jose';
 import { signInMetadata, exchangeCode } from '../src/oidc.js';
-import { authenticate } from '../src/auth.js';
+import { authenticate, memberId } from '../src/auth.js';
+import { Service, all } from '../src/service.js';
 import { FileStore } from '../src/store.js';
 import { handle } from '../src/api.js';
 
@@ -264,6 +265,105 @@ test('API verifies signed access tokens, expiry, scope and membership; ID tokens
         authenticate(headers(await sign({ scope: 'openid' })), new FileStore()),
         /not been granted/,
       );
+      // First sign-in registers an identity without granting access; repeated/concurrent requests are safe.
+      process.env.AUTH_REGISTER_SIGN_INS = 'enabled';
+      process.env.AUTH_USERINFO_ENDPOINT =
+        'https://wordpress.example/oidc/userinfo';
+      globalThis.fetch = (async () =>
+        new Response(
+          JSON.stringify({
+            sub: '7',
+            name: 'Club volunteer',
+            email: 'volunteer@example.com',
+            roles: ['admin'],
+          }),
+        )) as typeof fetch;
+      const pendingStore = new FileStore();
+      const access = headers(await sign({ scope: 'openid profile email' }));
+      const attempts = await Promise.allSettled([
+        authenticate(access, pendingStore),
+        authenticate(access, pendingStore),
+      ]);
+      assert.ok(
+        attempts.every(
+          (r) =>
+            r.status === 'rejected' &&
+            /awaiting administrator/.test(r.reason.message),
+        ),
+      );
+      const memberships = await all(pendingStore, 'member');
+      assert.equal(memberships.length, 1);
+      const pending = memberships[0];
+      assert.equal(pending.data.title, 'Club volunteer');
+      assert.equal(pending.data.email, 'volunteer@example.com');
+      assert.deepEqual(pending.data.roles, []); // Never trust provider roles as dashboard access.
+      assert.equal(pending.data.active, false);
+      assert.equal(pending.data.classification, 'restricted');
+      await assert.rejects(
+        authenticate(access, pendingStore),
+        /awaiting administrator/,
+      );
+      assert.equal((await pendingStore.get('member', pending.id))?.version, 1);
+      const admin = new Service(pendingStore, {
+        id: 'admin',
+        name: 'Admin',
+        roles: ['admin'],
+        projectIds: [],
+      });
+      const update = {
+        title: pending.data.title,
+        email: pending.data.email,
+        issuer: configured.AUTH_ISSUER,
+        subject: '7',
+        roles: ['inventory'],
+        active: true,
+        projectIds: [],
+      };
+      let approved = await admin.update('member', pending.id, update, 1);
+      assert.deepEqual((await authenticate(access, pendingStore)).roles, [
+        'inventory',
+      ]);
+      const denied = new Service(pendingStore, {
+        id: 'other',
+        name: 'Other',
+        roles: ['committee'],
+        projectIds: [],
+      });
+      await assert.rejects(denied.list('member'), /restricted/);
+      process.env.AUTH_ADMIN_SUBJECTS = '7';
+      approved = await admin.update(
+        'member',
+        pending.id,
+        { ...update, active: false },
+        approved.version,
+      );
+      await assert.rejects(authenticate(access, pendingStore), /disabled/); // Bootstrap never overrides a stored revocation.
+      const bootstrapStore = new FileStore();
+      assert.deepEqual((await authenticate(access, bootstrapStore)).roles, [
+        'admin',
+      ]);
+      assert.equal(
+        (
+          await bootstrapStore.get(
+            'member',
+            memberId(configured.AUTH_ISSUER, '7'),
+          )
+        )?.data.active,
+        true,
+      );
+      const forgedStore = new FileStore();
+      await assert.rejects(
+        authenticate(
+          headers(
+            await sign({ scope: 'openid' }, true, {
+              issuer: 'https://forged.example',
+            }),
+          ),
+          forgedStore,
+        ),
+        /invalid/,
+      );
+      assert.equal((await all(forgedStore, 'member')).length, 0);
     } finally {
       globalThis.fetch = originalFetch;
     }

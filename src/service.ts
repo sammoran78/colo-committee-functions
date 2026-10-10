@@ -251,7 +251,6 @@ export class Service {
     if (
       kind === 'item' &&
       (d.quantity !== e.data.quantity ||
-        d.location !== e.data.location ||
         d.condition !== e.data.condition ||
         d.verified !== e.data.verified ||
         d.tracking !== e.data.tracking ||
@@ -290,6 +289,32 @@ export class Service {
     if (kind === 'task') {
       d.comments = e.data.comments;
       d.sourceId = e.data.sourceId;
+    }
+    if (kind === 'item' && d.location !== e.data.location) {
+      const source = e.data.location;
+      let moved = 0;
+      const balances = e.data.balances || [];
+      const merged: typeof balances = [];
+      for (const b of balances) {
+        const location = b.location === source ? d.location : b.location;
+        if (b.location === source) moved += b.quantity;
+        const bucket = merged.find(
+          (x: any) => x.location === location && x.condition === b.condition,
+        );
+        if (bucket) bucket.quantity += b.quantity;
+        else merged.push({ ...b, location });
+      }
+      e.data.balances = merged;
+      e.data.movements.push({
+        id: randomUUID(),
+        action: 'transfer',
+        at: now(),
+        by: this.actor.id,
+        location: source,
+        destination: d.location,
+        quantity: moved,
+        reason: 'Storage location changed in item editor',
+      });
     }
     if (kind === 'suggestion') {
       for (const key of ['sourceId', 'sourceKind', 'sourceVersion'])

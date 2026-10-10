@@ -9,6 +9,8 @@
   "AUTH_JWKS_URI": "https://colocolosydney.com/wenisch-tech/keystone-oidc/oauth/jwks",
   "AUTH_REQUIRED_SCOPE": "openid",
   "AUTH_ADMIN_SUBJECTS": "1",
+  "AUTH_REGISTER_SIGN_INS": "enabled",
+  "AUTH_USERINFO_ENDPOINT": "https://colocolosydney.com/wenisch-tech/keystone-oidc/oauth/userinfo",
   "AUTH_PUBLIC_API_BASE_URL": "https://colo-committee-functions-d6dsgsasfnc4f5hv.australiaeast-01.azurewebsites.net/api",
   "AUTH_REDIRECT_URI": "https://thankful-rock-0cef6e000.3.azurestaticapps.net/auth/callback",
   "ALLOWED_ORIGINS": "https://thankful-rock-0cef6e000.3.azurestaticapps.net"

@@ -1,6 +1,6 @@
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { createHash } from 'node:crypto';
-import { type Actor, Problem } from './model.js';
+import { type Actor, type Entry, Problem } from './model.js';
 import type { Store } from './store.js';
 export const localActor: Actor = {
   id: 'local-admin',
@@ -73,11 +73,116 @@ export async function authenticate(
       'Use an access token with the required dashboard scope.',
     );
   const id = memberId(issuer, payload.sub);
-  const stored = await store.get('member', id);
+  let stored = await store.get('member', id);
+  const bootstrap = (process.env.AUTH_ADMIN_SUBJECTS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .includes(payload.sub);
+  // Registration never grants roles except to an explicitly configured bootstrap admin.
+  // Opt in after approving the additional one-time Cosmos write per new identity.
+  if (!stored && process.env.AUTH_REGISTER_SIGN_INS === 'enabled') {
+    let name = typeof payload.name === 'string' ? payload.name : '';
+    let email = typeof payload.email === 'string' ? payload.email : '';
+    const endpoint = process.env.AUTH_USERINFO_ENDPOINT;
+    if (endpoint) {
+      const url = new URL(endpoint);
+      if (
+        url.protocol !== 'https:' ||
+        url.origin !== new URL(issuer).origin ||
+        url.username ||
+        url.password ||
+        url.hash ||
+        url.search
+      )
+        throw new Problem(
+          503,
+          'Configure AUTH_USERINFO_ENDPOINT as an HTTPS URL on the issuer origin.',
+        );
+      try {
+        const response = await fetch(url, {
+          headers: {
+            Authorization: 'Bearer ' + token,
+            Accept: 'application/json',
+          },
+          redirect: 'error',
+          signal: AbortSignal.timeout(5000),
+        });
+        if (response.ok) {
+          const body = await response.text();
+          if (Buffer.byteLength(body) <= 65536) {
+            const profile = JSON.parse(body);
+            if (profile.sub === payload.sub) {
+              name =
+                typeof profile.name === 'string'
+                  ? profile.name
+                  : typeof profile.preferred_username === 'string'
+                    ? profile.preferred_username
+                    : name;
+              email = typeof profile.email === 'string' ? profile.email : email;
+            }
+          }
+        }
+      } catch {
+        // Identity was already verified. A profile outage must not grant access or prevent registration.
+      }
+    }
+    const at = new Date().toISOString();
+    const entry: Entry = {
+      id,
+      kind: 'member',
+      application: 'colo-committee',
+      schemaVersion: 1,
+      version: 1,
+      createdAt: at,
+      updatedAt: at,
+      createdBy: id,
+      data: {
+        title:
+          name.trim().slice(0, 200) ||
+          (bootstrap ? 'Club administrator' : 'WordPress user ' + payload.sub),
+        email: email.trim().slice(0, 320),
+        issuer,
+        subject: payload.sub,
+        roles: bootstrap ? ['admin'] : [],
+        active: bootstrap,
+        projectIds: [],
+        classification: 'restricted',
+        description: '',
+        requestedAt: at,
+      },
+      history: [
+        {
+          at,
+          by: id,
+          action: bootstrap
+            ? 'Bootstrap administrator registered'
+            : 'Staff access requested',
+        },
+      ],
+      receipts: {},
+    };
+    try {
+      stored = await store.create(entry);
+    } catch (error) {
+      if (
+        (error instanceof Problem && error.status === 409) ||
+        (error as { code?: number }).code === 409
+      ) {
+        stored = await store.get('member', id);
+        if (!stored) throw error;
+      } else throw error;
+    }
+  }
   // An explicit disabled membership always overrides the bootstrap allowlist.
   if (stored) {
     if (!stored.data.active)
-      throw new Problem(403, 'Dashboard access is disabled.');
+      throw new Problem(
+        403,
+        stored.data.roles.length
+          ? 'Dashboard access is disabled.'
+          : 'Your staff registration is awaiting administrator approval.',
+      );
     return {
       id,
       name: stored.data.title,
@@ -85,13 +190,7 @@ export async function authenticate(
       projectIds: stored.data.projectIds,
     };
   }
-  if (
-    (process.env.AUTH_ADMIN_SUBJECTS || '')
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean)
-      .includes(payload.sub)
-  )
+  if (bootstrap)
     return {
       id,
       name:
